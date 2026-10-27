@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>이미지 수집</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>이미지 수집</strong>
+    <nav class="nav">
+      <a href="index.html">센서 / LED</a>
+      <a href="collect.html" class="current">이미지 수집</a>
+    </nav>
+    <span class="spacer"></span>
+    <span id="user-email" class="muted"></span>
+    <button id="logout" class="ghost">로그아웃</button>
+  </header>
+
+  <main class="collect">
+    <!-- 실시간 카메라 -->
+    <section class="panel cam-panel">
+      <div class="panel-head">
+        <h2>카메라</h2>
+        <span class="muted small"><span id="cam-dot" class="dot"></span><span id="cam-status">연결 중…</span></span>
+      </div>
+      <div class="cam-frame">
+        <img id="cam" alt="ESP32S3 카메라">
+        <div id="cam-empty" class="cam-empty">카메라 프레임을 기다리는 중</div>
+        <div id="flash" class="flash"></div>
+      </div>
+      <p class="muted small" id="cam-info">-</p>
+    </section>
+
+    <!-- 클래스 + 촬영 -->
+    <section class="panel ctrl-panel">
+      <h2>클래스</h2>
+      <ul id="labels" class="labels"></ul>
+      <form id="add-label" class="row">
+        <input name="label" placeholder="새 클래스 (영문/숫자/_/-)" pattern="[A-Za-z0-9_\-]{1,40}" required>
+        <button type="submit" class="ghost">추가</button>
+      </form>
+
+      <h2 class="mt">촬영</h2>
+      <p class="muted small">선택된 클래스: <strong id="cur-label">-</strong></p>
+      <button id="shot" class="big">촬영 <kbd>Space</kbd></button>
+
+      <div class="burst">
+        <label>장수 <input id="burst-count" type="number" min="1" max="500" value="20"></label>
+        <label>간격(ms) <input id="burst-interval" type="number" min="0" max="10000" step="100" value="500"></label>
+      </div>
+      <button id="burst" class="ghost wide-btn">연속 촬영 <kbd>B</kbd></button>
+      <div id="burst-progress" class="progress" hidden><div></div></div>
+      <p id="ctrl-msg" class="msg"></p>
+      <p class="muted small">단축키: 숫자 1–9 클래스 선택, Space 촬영, B 연속 촬영/중지</p>
+    </section>
+
+    <!-- 갤러리 -->
+    <section class="panel gallery-panel">
+      <div class="panel-head">
+        <div class="tabs" id="gallery-tabs"></div>
+        <span class="spacer"></span>
+        <span class="muted small" id="sel-info"></span>
+        <button id="sel-all" class="ghost">전체 선택</button>
+        <button id="del-sel" class="danger" disabled>선택 삭제</button>
+        <button id="dl" class="ghost">ZIP 다운로드</button>
+      </div>
+      <div id="grid" class="grid"></div>
+      <button id="more" class="ghost wide-btn" hidden>더 보기</button>
+    </section>
+  </main>
+
+  <div id="viewer" class="viewer" hidden>
+    <img id="viewer-img" alt="">
+    <p id="viewer-cap"></p>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="collect.js"></script>
+</body>
+</html>

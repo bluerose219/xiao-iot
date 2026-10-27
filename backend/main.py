@@ -1,10 +1,15 @@
+import asyncio
+import io
 import logging
 import os
+import re
 import time
+import uuid
+import zipfile
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -16,6 +21,7 @@ DEVICE_ID = os.getenv("DEVICE_ID", "xiao-01")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 RETENTION_DAYS = float(os.getenv("RETENTION_DAYS", "7"))  # 이보다 오래된 센서 데이터는 자동 삭제
 CLEANUP_INTERVAL_SEC = 3600
+IMAGE_BUCKET = os.getenv("IMAGE_BUCKET", "ei-images")
 
 log = logging.getLogger("uvicorn.error")
 
@@ -69,16 +75,27 @@ class Credentials(BaseModel):
     password: str
 
 
+_user_cache: dict[str, tuple[float, dict]] = {}
+USER_CACHE_SEC = 60  # 카메라 프레임처럼 잦은 요청마다 Supabase에 토큰을 확인하지 않도록 캐시
+
+
 async def current_user(authorization: str = Header(default="")) -> dict:
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    cached = _user_cache.get(authorization)
+    if cached and time.time() - cached[0] < USER_CACHE_SEC:
+        return cached[1]
     resp = await client.get(
         f"{SUPABASE_URL}/auth/v1/user",
         headers={**_anon_headers(), "Authorization": authorization},
     )
     if not resp.is_success:
+        _user_cache.pop(authorization, None)
         raise HTTPException(status_code=401, detail="토큰이 만료되었거나 유효하지 않습니다")
-    return resp.json()
+    if len(_user_cache) > 1000:
+        _user_cache.clear()
+    _user_cache[authorization] = (time.time(), resp.json())
+    return _user_cache[authorization][1]
 
 
 @app.post("/auth/signup")
@@ -194,6 +211,205 @@ async def device_data(reading: SensorReading):
 async def device_led():
     rows = await _db("GET", "iot_device_state", params={"device_id": f"eq.{DEVICE_ID}", "select": "led"})
     return {"led": bool(rows and rows[0]["led"])}
+
+
+# ---------- 카메라 / Edge Impulse 이미지 수집 ----------
+# 기기가 최신 프레임을 계속 올리고(메모리 보관), 대시보드는 그 프레임을 보거나 촬영해 Storage에 저장한다.
+
+FRAME_MAX_BYTES = 300_000
+VIEWER_TIMEOUT_SEC = 15      # 대시보드가 이 시간 안에 프레임을 봤으면 기기가 빠르게 전송
+FAST_INTERVAL_MS = 0
+IDLE_INTERVAL_MS = 5000
+LABEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+
+
+class FrameStore:
+    def __init__(self) -> None:
+        self.jpeg: bytes | None = None
+        self.seq = 0
+        self.received_at = 0.0
+        self.viewer_seen = 0.0
+        self.cond = asyncio.Condition()
+
+    async def put(self, jpeg: bytes) -> None:
+        async with self.cond:
+            self.jpeg = jpeg
+            self.seq += 1
+            self.received_at = time.time()
+            self.cond.notify_all()
+
+    async def wait_newer(self, seq: int, timeout: float) -> bool:
+        async with self.cond:
+            try:
+                await asyncio.wait_for(self.cond.wait_for(lambda: self.seq > seq), timeout)
+                return True
+            except asyncio.TimeoutError:
+                return False
+
+    def viewer_active(self) -> bool:
+        return time.time() - self.viewer_seen < VIEWER_TIMEOUT_SEC
+
+
+frames = FrameStore()
+
+
+def _storage_url(path: str) -> str:
+    return f"{SUPABASE_URL}/storage/v1/{path}"
+
+
+async def _sign_urls(paths: list[str], expires: int = 3600) -> dict[str, str]:
+    if not paths:
+        return {}
+    resp = await client.post(
+        _storage_url(f"object/sign/{IMAGE_BUCKET}"),
+        json={"expiresIn": expires, "paths": paths},
+        headers=_service_headers(),
+    )
+    _raise_from(resp)
+    return {
+        item["path"]: _storage_url(item["signedURL"].lstrip("/"))
+        for item in resp.json()
+        if item.get("signedURL")
+    }
+
+
+@app.post("/device/frame", dependencies=[Depends(device_auth)])
+async def device_frame(request: Request):
+    """기기가 JPEG 원본(body)을 올린다. 응답의 interval_ms 만큼 쉬었다가 다음 프레임을 보낸다."""
+    jpeg = await request.body()
+    if not jpeg.startswith(b"\xff\xd8") or len(jpeg) > FRAME_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="invalid jpeg")
+    await frames.put(jpeg)
+    return {"interval_ms": FAST_INTERVAL_MS if frames.viewer_active() else IDLE_INTERVAL_MS}
+
+
+@app.get("/api/camera/frame")
+async def camera_frame(after: int = 0, user: dict = Depends(current_user)):
+    """최신 프레임. after=<마지막으로 받은 seq>를 주면 새 프레임이 올 때까지 최대 5초 기다린다."""
+    frames.viewer_seen = time.time()
+    if frames.seq <= after and not await frames.wait_newer(after, 5):
+        return Response(status_code=204)
+    if frames.jpeg is None:
+        return Response(status_code=204)
+    return Response(
+        content=frames.jpeg,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Frame-Seq": str(frames.seq),
+            "X-Frame-Age": f"{time.time() - frames.received_at:.2f}",
+            "Access-Control-Expose-Headers": "X-Frame-Seq, X-Frame-Age",
+        },
+    )
+
+
+class CaptureRequest(BaseModel):
+    label: str
+
+
+@app.post("/api/captures")
+async def capture(body: CaptureRequest, user: dict = Depends(current_user)):
+    """촬영 요청 이후에 도착한 새 프레임을 저장한다 (연속 촬영 시 같은 프레임이 중복 저장되지 않음)."""
+    label = body.label.strip()
+    if not LABEL_RE.match(label):
+        raise HTTPException(status_code=400, detail="라벨은 영문/숫자/_/- 만 사용 (최대 40자)")
+    frames.viewer_seen = time.time()
+    if not await frames.wait_newer(frames.seq, 8) or frames.jpeg is None:
+        raise HTTPException(status_code=504, detail="카메라에서 새 프레임이 오지 않습니다")
+    jpeg = frames.jpeg
+
+    image_id = str(uuid.uuid4())
+    path = f"{label}/{label}.{image_id[:8]}.jpg"   # Edge Impulse는 파일명 첫 '.' 앞을 라벨로 인식
+    resp = await client.post(
+        _storage_url(f"object/{IMAGE_BUCKET}/{path}"),
+        content=jpeg,
+        headers={**_service_headers(), "Content-Type": "image/jpeg"},
+    )
+    _raise_from(resp)
+    rows = await _db(
+        "POST",
+        "iot_images",
+        json={"id": image_id, "label": label, "path": path, "size": len(jpeg)},
+        prefer="return=representation",
+    )
+    row = rows[0]
+    row["url"] = (await _sign_urls([path])).get(path)
+    return row
+
+
+@app.get("/api/labels")
+async def labels(user: dict = Depends(current_user)):
+    rows = await _db("GET", "iot_images", params={"select": "label", "limit": "100000"})
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["label"]] = counts.get(r["label"], 0) + 1
+    return {"labels": [{"label": k, "count": v} for k, v in sorted(counts.items())]}
+
+
+@app.get("/api/images")
+async def list_images(label: str | None = None, limit: int = 200, offset: int = 0, user: dict = Depends(current_user)):
+    params = {"order": "created_at.desc", "limit": str(max(1, min(limit, 1000))), "offset": str(max(0, offset))}
+    if label:
+        params["label"] = f"eq.{label}"
+    rows = await _db("GET", "iot_images", params=params)
+    urls = await _sign_urls([r["path"] for r in rows])
+    for r in rows:
+        r["url"] = urls.get(r["path"])
+    return {"images": rows}
+
+
+class DeleteRequest(BaseModel):
+    ids: list[str]
+
+
+@app.post("/api/images/delete")
+async def delete_images(body: DeleteRequest, user: dict = Depends(current_user)):
+    if not body.ids:
+        return {"deleted": 0}
+    id_list = ",".join(str(uuid.UUID(i)) for i in body.ids)  # uuid 형식 검증
+    rows = await _db("GET", "iot_images", params={"id": f"in.({id_list})", "select": "id,path"})
+    if not rows:
+        return {"deleted": 0}
+    resp = await client.request(
+        "DELETE",
+        _storage_url(f"object/{IMAGE_BUCKET}"),
+        json={"prefixes": [r["path"] for r in rows]},
+        headers=_service_headers(),
+    )
+    _raise_from(resp)
+    await _db("DELETE", "iot_images", params={"id": f"in.({id_list})"}, prefer="return=minimal")
+    return {"deleted": len(rows)}
+
+
+@app.get("/api/images/download")
+async def download_images(label: str | None = None, user: dict = Depends(current_user)):
+    """클래스별(또는 전체) ZIP. 폴더=라벨, 파일명=<label>.<id>.jpg 라서 Edge Impulse 업로더에 그대로 넣을 수 있다."""
+    params = {"select": "path", "order": "created_at.asc", "limit": "100000"}
+    if label:
+        params["label"] = f"eq.{label}"
+    rows = await _db("GET", "iot_images", params=params)
+    if not rows:
+        raise HTTPException(status_code=404, detail="이미지가 없습니다")
+
+    sem = asyncio.Semaphore(8)
+
+    async def fetch(path: str) -> tuple[str, bytes | None]:
+        async with sem:
+            r = await client.get(_storage_url(f"object/{IMAGE_BUCKET}/{path}"), headers=_service_headers())
+            return path, r.content if r.is_success else None
+
+    results = await asyncio.gather(*(fetch(r["path"]) for r in rows))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:   # JPEG은 이미 압축되어 있음
+        for path, data in results:
+            if data is not None:
+                zf.writestr(path, data)
+    name = f"{label or 'all'}_{datetime.now().strftime('%Y%m%d_%H%M')}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}"', "Access-Control-Expose-Headers": "Content-Disposition"},
+    )
 
 
 @app.get("/health")

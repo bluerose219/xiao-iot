@@ -107,3 +107,78 @@ tbody tr:nth-child(n+16) { display: none; }
 @media (max-width: 760px) {
   .dash { grid-template-columns: 1fr; }
 }
+
+/* ---------- 공통 추가 ---------- */
+.small { font-size: 12px; }
+.mt { margin-top: 20px; }
+.nav { display: flex; gap: 4px; margin-left: 12px; }
+.nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; }
+.nav a.current { color: var(--text); background: var(--bg); }
+button.danger { background: #dc2626; border-color: #dc2626; }
+kbd { font: 11px ui-monospace, monospace; padding: 1px 5px; border: 1px solid currentColor; border-radius: 4px; opacity: .7; margin-left: 4px; }
+.panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.panel-head h2 { margin: 0; }
+
+/* ---------- 이미지 수집 ---------- */
+.collect {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 16px;
+}
+.gallery-panel { grid-column: 1 / -1; }
+
+.cam-frame {
+  position: relative;
+  background: #111;
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  width: min(100%, 70vh);
+  margin: 0 auto;
+}
+.cam-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cam-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #9ca3af; font-size: 13px; }
+.flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.flash.on { animation: flash .25s ease-out; }
+@keyframes flash { from { opacity: .7; } to { opacity: 0; } }
+
+.labels { list-style: none; margin: 0 0 8px; padding: 0; max-height: 260px; overflow-y: auto; }
+.labels li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; cursor: pointer;
+}
+.labels li.active { border-color: var(--accent); background: #eff4ff; }
+.labels li.empty { cursor: default; border-style: dashed; }
+.labels .key { width: 14px; font-size: 11px; color: var(--muted); }
+.labels .name { flex: 1; font-weight: 500; }
+.labels .count { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.row input { margin-top: 0; }
+
+button.big { width: 100%; padding: 14px; font-size: 16px; font-weight: 600; }
+.wide-btn { width: 100%; }
+.burst { display: flex; gap: 8px; margin: 14px 0 8px; }
+.burst label { flex: 1; font-size: 12px; color: var(--muted); }
+.progress { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.progress div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.grid .empty { grid-column: 1 / -1; text-align: center; padding: 24px 0; }
+.thumb { position: relative; margin: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; background: #111; }
+.thumb img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
+.thumb figcaption { position: absolute; left: 0; bottom: 0; padding: 2px 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); border-top-right-radius: 4px; }
+.thumb.selected { border-color: #dc2626; }
+.thumb.selected::after { content: "✓"; position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 12px; display: grid; place-items: center; }
+.thumb .zoom { position: absolute; top: 4px; right: 4px; padding: 0 6px; font-size: 13px; background: rgba(0,0,0,.55); border: none; opacity: 0; }
+.thumb:hover .zoom { opacity: 1; }
+#more { margin-top: 12px; }
+
+.viewer { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: grid; place-items: center; align-content: center; z-index: 10; cursor: zoom-out; }
+.viewer img { max-width: 90vw; max-height: 80vh; image-rendering: pixelated; min-width: min(480px, 90vw); }
+.viewer p { color: #e5e7eb; font-size: 13px; }
+
+@media (max-width: 860px) {
+  .collect { grid-template-columns: 1fr; }
+}
