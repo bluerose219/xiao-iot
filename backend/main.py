@@ -29,11 +29,11 @@ def _anon_headers() -> dict:
 
 
 def _service_headers() -> dict:
-    return {
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "Content-Type": "application/json",
-    }
+    headers = {"apikey": SUPABASE_SERVICE_KEY, "Content-Type": "application/json"}
+    # legacy service_role 키(JWT)만 Bearer로 보낸다. 새 sb_secret_ 키는 apikey 헤더만으로 동작
+    if SUPABASE_SERVICE_KEY.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {SUPABASE_SERVICE_KEY}"
+    return headers
 
 
 def _raise_from(resp: httpx.Response) -> None:
