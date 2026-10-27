@@ -2,5 +2,5 @@
 #pragma once
 #define WIFI_SSID     "your-wifi"
 #define WIFI_PASSWORD "your-password"
-#define API_BASE      "https://xiao-iot-api.onrender.com"
+#define API_BASE      "https://xiao-iot-api-c1io.onrender.com"
 #define DEVICE_KEY    "백엔드 DEVICE_KEY 환경변수와 같은 값"
