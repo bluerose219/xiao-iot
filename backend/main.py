@@ -1,5 +1,7 @@
+import logging
 import os
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -12,6 +14,10 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 DEVICE_KEY = os.environ["DEVICE_KEY"]
 DEVICE_ID = os.getenv("DEVICE_ID", "xiao-01")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
+RETENTION_DAYS = float(os.getenv("RETENTION_DAYS", "7"))  # 이보다 오래된 센서 데이터는 자동 삭제
+CLEANUP_INTERVAL_SEC = 3600
+
+log = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="XIAO ESP32S3 IoT API")
 app.add_middleware(
@@ -157,10 +163,29 @@ def device_auth(x_device_key: str = Header(default="")) -> None:
         raise HTTPException(status_code=401, detail="invalid device key")
 
 
+_last_cleanup = 0.0
+
+
+async def cleanup_old_data() -> None:
+    """RETENTION_DAYS보다 오래된 센서 데이터를 지운다. 기기 요청이 들어올 때 최대 1시간에 한 번 실행."""
+    global _last_cleanup
+    if RETENTION_DAYS <= 0 or time.monotonic() - _last_cleanup < CLEANUP_INTERVAL_SEC:
+        return
+    _last_cleanup = time.monotonic()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat()
+    try:
+        await _db("DELETE", "iot_sensor_data", params={"created_at": f"lt.{cutoff}"}, prefer="return=minimal")
+        log.info("cleanup: deleted sensor rows older than %s", cutoff)
+    except HTTPException as e:
+        # 정리 실패가 기기 데이터 수신을 막으면 안 된다
+        log.warning("cleanup failed: %s", e.detail)
+
+
 @app.post("/device/data", dependencies=[Depends(device_auth)])
 async def device_data(reading: SensorReading):
     """센서값을 저장하고, 응답으로 현재 LED 목표 상태를 돌려준다 (요청 1번으로 업/다운 처리)."""
     await _db("POST", "iot_sensor_data", json={"device_id": DEVICE_ID, **reading.model_dump()}, prefer="return=minimal")
+    await cleanup_old_data()
     rows = await _db("GET", "iot_device_state", params={"device_id": f"eq.{DEVICE_ID}", "select": "led"})
     return {"led": bool(rows and rows[0]["led"])}
 
