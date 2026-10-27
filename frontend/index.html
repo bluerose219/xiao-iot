@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XIAO 대시보드</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 로그인 / 회원가입 -->
+  <main id="auth-view" class="auth" hidden>
+    <h1>XIAO ESP32S3</h1>
+    <div class="tabs">
+      <button class="tab active" data-mode="login">로그인</button>
+      <button class="tab" data-mode="signup">회원가입</button>
+    </div>
+    <form id="auth-form">
+      <label>이메일 <input type="email" name="email" required autocomplete="email"></label>
+      <label>비밀번호 <input type="password" name="password" required minlength="6" autocomplete="current-password"></label>
+      <button type="submit" id="auth-submit">로그인</button>
+      <p id="auth-msg" class="msg"></p>
+    </form>
+  </main>
+
+  <!-- 대시보드 -->
+  <div id="dash-view" hidden>
+    <header class="topbar">
+      <strong>XIAO 대시보드</strong>
+      <span class="spacer"></span>
+      <span id="user-email" class="muted"></span>
+      <button id="logout" class="ghost">로그아웃</button>
+    </header>
+
+    <main class="dash">
+      <section class="panel">
+        <h2>기기 상태</h2>
+        <p><span id="online-dot" class="dot"></span><span id="online-text">확인 중…</span></p>
+        <p class="muted">마지막 수신: <span id="last-seen">-</span></p>
+      </section>
+
+      <section class="panel">
+        <h2>센서값</h2>
+        <dl class="stats">
+          <div><dt>칩 온도</dt><dd><span id="v-temp">-</span> °C</dd></div>
+          <div><dt>A0 아날로그</dt><dd id="v-analog">-</dd></div>
+          <div><dt>WiFi RSSI</dt><dd><span id="v-rssi">-</span> dBm</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>LED 제어</h2>
+        <p>현재 명령: <strong id="led-state">-</strong></p>
+        <div class="row">
+          <button id="led-on">켜기</button>
+          <button id="led-off" class="ghost">끄기</button>
+        </div>
+        <p class="muted">기기는 3초마다 서버를 확인하므로 반영까지 최대 몇 초 걸립니다.</p>
+      </section>
+
+      <section class="panel wide">
+        <h2>온도 추이 <span class="muted">(최근 60개)</span></h2>
+        <svg id="chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+      </section>
+
+      <section class="panel wide">
+        <h2>최근 기록</h2>
+        <table>
+          <thead><tr><th>시간</th><th>온도(°C)</th><th>A0</th><th>RSSI</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

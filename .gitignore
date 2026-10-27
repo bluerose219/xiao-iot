@@ -1,0 +1,4 @@
+firmware/xiao_iot/secrets.h
+.env
+__pycache__/
+.venv/
