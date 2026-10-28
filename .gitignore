@@ -2,3 +2,4 @@ secrets.h
 .env
 __pycache__/
 .venv/
+firmware/ei_model_arduino.zip

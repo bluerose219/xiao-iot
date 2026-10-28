@@ -182,3 +182,37 @@ button.big { width: 100%; padding: 14px; font-size: 16px; font-weight: 600; }
 @media (max-width: 860px) {
   .collect { grid-template-columns: 1fr; }
 }
+
+/* ---------- 실시간 추론 ---------- */
+.infer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 16px;
+}
+.badge {
+  position: absolute; left: 10px; top: 10px;
+  padding: 4px 10px; border-radius: 6px;
+  color: #fff; font-weight: 600; font-size: 15px;
+}
+.verdict { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.verdict-label { font-size: 36px; font-weight: 700; line-height: 1.1; }
+.verdict-conf { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 70px 1fr 52px; align-items: center; gap: 8px; font-size: 13px; }
+.bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+.bar-track span { display: block; height: 100%; transition: width .2s; }
+.bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.legend, .dist { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.legend i, .dist i, .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.dist { margin-top: 12px; }
+.timeline { display: flex; gap: 1px; height: 28px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.timeline i { flex: 1 1 0; min-width: 2px; max-width: 14px; }
+
+@media (max-width: 860px) {
+  .infer { grid-template-columns: 1fr; }
+}

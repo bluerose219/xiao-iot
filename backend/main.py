@@ -1,11 +1,14 @@
 import asyncio
+import base64
 import io
+import json
 import logging
 import os
 import re
 import time
 import uuid
 import zipfile
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -226,16 +229,21 @@ LABEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 class FrameStore:
     def __init__(self) -> None:
         self.jpeg: bytes | None = None
+        self.result: dict | None = None   # 추론 펌웨어가 보낸 프레임이면 추론 결과
+        self.history: deque[dict] = deque(maxlen=500)
         self.seq = 0
         self.received_at = 0.0
         self.viewer_seen = 0.0
         self.cond = asyncio.Condition()
 
-    async def put(self, jpeg: bytes) -> None:
+    async def put(self, jpeg: bytes, result: dict | None = None) -> None:
         async with self.cond:
             self.jpeg = jpeg
+            self.result = result
             self.seq += 1
             self.received_at = time.time()
+            if result is not None:
+                self.history.append({"t": self.received_at, "seq": self.seq, **result})
             self.cond.notify_all()
 
     async def wait_newer(self, seq: int, timeout: float) -> bool:
@@ -410,6 +418,58 @@ async def download_images(label: str | None = None, user: dict = Depends(current
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{name}"', "Access-Control-Expose-Headers": "Content-Disposition"},
     )
+
+
+# ---------- Edge Impulse 추론 결과 ----------
+# 추론 펌웨어가 JPEG(body) + 결과(X-Result 헤더, JSON)를 함께 올린다. 기록은 메모리에만 최근 500개 보관.
+
+def _parse_result(raw: str) -> dict:
+    try:
+        r = json.loads(raw)
+        scores = {str(k): float(v) for k, v in r["scores"].items()}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise HTTPException(status_code=400, detail="invalid X-Result")
+    top = max(scores, key=scores.get)
+    return {
+        "label": str(r.get("label") or top),          # 임계값 미만이면 기기가 "uncertain"으로 보냄
+        "top": top,
+        "confidence": scores[top],
+        "scores": scores,
+        "dsp_ms": int(r.get("dsp", 0)),
+        "nn_ms": int(r.get("nn", 0)),
+        "loop_ms": int(r.get("loop", 0)),
+    }
+
+
+@app.post("/device/infer", dependencies=[Depends(device_auth)])
+async def device_infer(request: Request, x_result: str = Header(default="")):
+    jpeg = await request.body()
+    if not jpeg.startswith(b"\xff\xd8") or len(jpeg) > FRAME_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="invalid jpeg")
+    await frames.put(jpeg, _parse_result(x_result))
+    return {"interval_ms": FAST_INTERVAL_MS if frames.viewer_active() else IDLE_INTERVAL_MS}
+
+
+@app.get("/api/infer/live")
+async def infer_live(after: int = 0, user: dict = Depends(current_user)):
+    """최신 프레임(base64) + 그 프레임의 추론 결과. after 이후 새 프레임이 올 때까지 최대 5초 대기."""
+    frames.viewer_seen = time.time()
+    if frames.seq <= after and not await frames.wait_newer(after, 5):
+        return Response(status_code=204)
+    if frames.jpeg is None:
+        return Response(status_code=204)
+    return {
+        "seq": frames.seq,
+        "age": round(time.time() - frames.received_at, 2),
+        "image": base64.b64encode(frames.jpeg).decode(),
+        "result": frames.result,
+    }
+
+
+@app.get("/api/infer/history")
+async def infer_history(limit: int = 200, user: dict = Depends(current_user)):
+    items = list(frames.history)[-max(1, min(limit, 500)):]
+    return {"now": time.time(), "history": items}
 
 
 @app.get("/health")

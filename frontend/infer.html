@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 추론</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>실시간 추론</strong>
+    <nav class="nav">
+      <a href="index.html">센서 / LED</a>
+      <a href="collect.html">이미지 수집</a>
+      <a href="infer.html" class="current">추론</a>
+    </nav>
+    <span class="spacer"></span>
+    <span id="user-email" class="muted"></span>
+    <button id="logout" class="ghost">로그아웃</button>
+  </header>
+
+  <main class="infer">
+    <!-- 카메라 + 현재 판정 오버레이 -->
+    <section class="panel cam-panel">
+      <div class="panel-head">
+        <h2>카메라</h2>
+        <span class="muted small"><span id="cam-dot" class="dot"></span><span id="cam-status">연결 중…</span></span>
+      </div>
+      <div class="cam-frame">
+        <img id="cam" alt="ESP32S3 카메라">
+        <div id="cam-empty" class="cam-empty">추론 결과를 기다리는 중</div>
+        <div id="badge" class="badge" hidden></div>
+      </div>
+      <p class="muted small" id="cam-info">-</p>
+    </section>
+
+    <!-- 현재 판정 -->
+    <section class="panel">
+      <h2>현재 판정</h2>
+      <div class="verdict">
+        <span id="v-label" class="verdict-label">-</span>
+        <span id="v-conf" class="verdict-conf">-</span>
+      </div>
+      <div id="bars" class="bars"></div>
+
+      <h2 class="mt">처리 시간</h2>
+      <dl class="stats">
+        <div><dt>전처리 (DSP)</dt><dd><span id="t-dsp">-</span> ms</dd></div>
+        <div><dt>신경망 (NN)</dt><dd><span id="t-nn">-</span> ms</dd></div>
+        <div><dt>한 사이클 (촬영~판정)</dt><dd><span id="t-loop">-</span> ms</dd></div>
+        <div><dt>대시보드 수신</dt><dd><span id="t-fps">-</span> fps</dd></div>
+      </dl>
+      <p class="muted small">판정 기준: 최고 점수 0.6 미만이면 uncertain</p>
+    </section>
+
+    <!-- 흐름 -->
+    <section class="panel wide">
+      <div class="panel-head">
+        <h2>판정 흐름 <span class="muted">(최근 <span id="hist-n">0</span>건)</span></h2>
+        <span class="spacer"></span>
+        <div id="legend" class="legend"></div>
+      </div>
+      <div id="timeline" class="timeline"></div>
+      <div id="dist" class="dist"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>최근 판정</h2>
+      <table>
+        <thead><tr><th>시간</th><th>판정</th><th>신뢰도</th><th>점수</th><th>NN(ms)</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="infer.js"></script>
+</body>
+</html>
