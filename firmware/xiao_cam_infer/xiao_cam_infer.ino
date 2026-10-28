@@ -77,12 +77,15 @@ bool initCamera() {
     Serial.println("PSRAM 없음: 빌드 옵션 PSRAM=opi 를 확인하세요");
     return false;
   }
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("카메라 초기화 실패 0x%x\n", err);
-    return false;
+  // 소프트 리셋 직후엔 카메라 센서가 바로 응답하지 않을 때가 있어 몇 번 재시도
+  for (int attempt = 1; attempt <= 5; attempt++) {
+    esp_err_t err = esp_camera_init(&config);
+    if (err == ESP_OK) return true;
+    Serial.printf("카메라 초기화 실패 0x%x (%d/5)\n", err, attempt);
+    esp_camera_deinit();
+    delay(500 * attempt);
   }
-  return true;
+  return false;
 }
 
 void connectWiFi() {
